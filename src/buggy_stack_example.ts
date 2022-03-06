@@ -35,7 +35,7 @@ if (isMainThread) {
   (async () => {
     const N = 1000;
     let totalPushed = 0;
-    for (let x = 0; x < 100; x++) {
+    for (let x = 0; x < 1000; x++) {
       for (let i = 0; i < N; i++) {
         stack.push(i);
         totalPushed++;
@@ -51,13 +51,16 @@ if (isMainThread) {
   const stack = new BuggyStack(heap, workerData.stack);
   let n = 0;
   while (!Atomics.load(memory, 0)) {
-    let value;
-    const values = [];
-    while ((value = stack.pop()) !== null) {
-      //      values.push(value);
+    while (stack.pop() !== null) {
       n++;
     }
   }
+
+  // drain the stack one last time
+  while (stack.pop() !== null) {
+    n++;
+  }
+
   console.log("worker " + threadId + " popped " + n + " items");
   parentPort!.postMessage(n);
 }
