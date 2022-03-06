@@ -1,40 +1,63 @@
 import { BuggyStack } from "./buggy_stack";
 import { Heap } from "./heap";
-import { threadId, Worker, isMainThread, workerData } from "worker_threads";
+import {
+  threadId,
+  Worker,
+  isMainThread,
+  workerData,
+  parentPort,
+} from "worker_threads";
 
 if (isMainThread) {
   const memory = new Uint32Array(new SharedArrayBuffer(32 * 20000));
   const heap = new Heap(memory, 8);
   const stack = BuggyStack.init(heap);
 
-  new Worker(__filename, { workerData: { memory, stack: stack.ptr } });
-  new Worker(__filename, { workerData: { memory, stack: stack.ptr } });
-  new Worker(__filename, { workerData: { memory, stack: stack.ptr } });
-  new Worker(__filename, { workerData: { memory, stack: stack.ptr } });
+  const NUM_WORKERS = 4;
 
-  setTimeout(() => {
-    const N = 10000;
-    for (let x = 0; x < 10; x++) {
+  let totalPopped = 0;
+  let numWorkersFinished = 0;
+
+  for (let i = 0; i < NUM_WORKERS; i++) {
+    const w = new Worker(__filename, {
+      workerData: { memory, stack: stack.ptr },
+    });
+    w.on("message", (count) => {
+      totalPopped += count;
+      numWorkersFinished++;
+
+      if (numWorkersFinished === NUM_WORKERS) {
+        console.log("Total popped: " + totalPopped);
+      }
+    });
+  }
+
+  (async () => {
+    const N = 1000;
+    let totalPushed = 0;
+    for (let x = 0; x < 100; x++) {
       for (let i = 0; i < N; i++) {
         stack.push(i);
+        totalPushed++;
       }
-      console.log("pushed " + N + " items");
+      await Promise.resolve();
     }
-  }, 1000);
+    console.log("Total pushed: " + totalPushed);
+    Atomics.store(memory, 0, 1);
+  })();
 } else {
   const memory: Uint32Array = workerData.memory;
   const heap = new Heap(memory, 8);
   const stack = new BuggyStack(heap, workerData.stack);
-  while (true) {
-    let n = 0;
+  let n = 0;
+  while (!Atomics.load(memory, 0)) {
     let value;
     const values = [];
-    while (n < 100 && (value = stack.pop()) !== null) {
-      values.push(value);
+    while ((value = stack.pop()) !== null) {
+      //      values.push(value);
       n++;
     }
-    if (n > 0) {
-      console.log("worker " + threadId + " popped " + n + " items", values);
-    }
   }
+  console.log("worker " + threadId + " popped " + n + " items");
+  parentPort!.postMessage(n);
 }
